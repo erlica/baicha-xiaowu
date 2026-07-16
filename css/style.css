@@ -875,6 +875,7 @@ body {
   border-radius: var(--radius-sm);
   border-left: 3px solid var(--gold);
   font-size: 14px;
+  position: relative;
 }
 
 .annotation-item .quote {
@@ -900,6 +901,33 @@ body {
   color: var(--text-light);
   display: flex;
   justify-content: space-between;
+}
+
+.delete-btn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;
+  border-radius: 50%;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.annotation-item:hover .delete-btn,
+.comment-item:hover .delete-btn {
+  opacity: 1;
+}
+
+.delete-btn:hover {
+  background: rgba(192, 57, 43, 0.1);
 }
 
 /* 评论区输入 */

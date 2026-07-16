@@ -1134,7 +1134,6 @@ async function loadAnnotations(group) {
 
   container.innerHTML = data.map(a => {
     const isMe = a.user_id === state.user.id;
-    // 找到对应划线文本
     const hl = state.highlights.find(h => h.id === a.highlight_id);
     const quoteText = hl?.selected_text || '';
 
@@ -1146,9 +1145,23 @@ async function loadAnnotations(group) {
           <span>${isMe ? '我' : '书友 ' + a.user_id.substring(0, 6)}</span>
           <span>${formatDate(a.created_at)}</span>
         </div>
+        ${isMe ? `<button class="delete-btn" onclick="deleteAnnotation('${a.id}')" title="删除批注">🗑️</button>` : ''}
       </div>
     `;
   }).join('');
+}
+
+async function deleteAnnotation(id) {
+  if (!confirm('确定要删除这条批注吗？')) return;
+  try {
+    await supabase.from('annotations').delete().eq('id', id);
+    state.annotations = state.annotations.filter(a => a.id !== id);
+    toast('批注已删除', 'success');
+    loadAnnotations(state.currentGroup);
+    renderParagraphs();
+  } catch (err) {
+    toast('删除失败', 'error');
+  }
 }
 
 async function loadComments(group) {
@@ -1170,15 +1183,27 @@ async function loadComments(group) {
   container.innerHTML = data.map(c => {
     const isMe = c.user_id === state.user.id;
     return `
-      <div class="comment-item">
+      <div class="comment-item" data-id="${c.id}">
         <div>${escapeHtml(c.content)}</div>
         <div class="comment-meta">
           <span>${isMe ? '我' : '书友 ' + c.user_id.substring(0, 6)}</span>
           <span>${formatDate(c.created_at)}</span>
         </div>
+        ${isMe ? `<button class="delete-btn" onclick="deleteComment('${c.id}')" title="删除评论">🗑️</button>` : ''}
       </div>
     `;
   }).join('');
+}
+
+async function deleteComment(id) {
+  if (!confirm('确定要删除这条评论吗？')) return;
+  try {
+    await supabase.from('comments').delete().eq('id', id);
+    toast('评论已删除', 'success');
+    loadComments(state.currentGroup);
+  } catch (err) {
+    toast('删除失败', 'error');
+  }
 }
 
 async function sendComment() {
