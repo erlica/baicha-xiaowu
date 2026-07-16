@@ -153,26 +153,29 @@ async function logout() {
 // ========== 书架模块 ==========
 async function loadBooks() {
   const container = $('#booksList');
+  if (!container) return;
   container.innerHTML = '<div class="empty-state">📚<br>加载中...</div>';
 
-  const { data, error } = await supabase
-    .from('books')
-    .select('*')
-    .order('created_at', { ascending: false });
+  try {
+    const { data, error } = await supabase
+      .from('books')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    container.innerHTML = '<div class="empty-state">❌<br>加载失败，请刷新重试</div>';
-    return;
-  }
+    if (error) {
+      console.error('loadBooks error:', error);
+      container.innerHTML = `<div class="empty-state">❌<br>加载失败：${escapeHtml(error.message || '未知错误')}<br><br><button class="btn btn-sm btn-outline" onclick="loadBooks()">重试</button></div>`;
+      return;
+    }
 
-  if (!data || data.length === 0) {
-    container.innerHTML = '<div class="empty-state">📚<br>还没有书籍，上传一本开始读书吧</div>';
-    return;
-  }
+    if (!data || data.length === 0) {
+      container.innerHTML = '<div class="empty-state">📚<br>还没有书籍，上传一本开始读书吧</div>';
+      return;
+    }
 
-  container.innerHTML = data.map(book => {
-    const isOwner = book.created_by === state.user?.id;
-    return `
+    container.innerHTML = data.map(book => {
+      const isOwner = book.created_by === state.user?.id;
+      return `
     <div class="book-card">
       <div class="book-card-inner" onclick="navigateTo('book-detail', ${JSON.stringify(book).replace(/"/g, '&quot;')})">
         ${book.cover_url ? `<img class="book-card-cover" src="${escapeHtml(book.cover_url)}" alt="">` : ''}
@@ -183,6 +186,10 @@ async function loadBooks() {
       ${isOwner ? `<button class="book-card-delete" onclick="event.stopPropagation();deleteBook('${book.id}','${escapeHtml(book.title)}')" title="删除这本书">🗑️</button>` : ''}
     </div>
   `; }).join('');
+  } catch (err) {
+    console.error('loadBooks exception:', err);
+    container.innerHTML = `<div class="empty-state">❌<br>网络异常：${escapeHtml(err.message || '无法连接服务器')}<br><br><button class="btn btn-sm btn-outline" onclick="loadBooks()">重试</button></div>`;
+  }
 }
 
 // ========== 删除书籍 ==========
@@ -515,35 +522,50 @@ async function loadBookDetail(book) {
   $('#detailBookTitle').textContent = book.title;
   $('#detailBookAuthor').textContent = book.author || '未知作者';
 
-  // 加载该书的小组列表
   const container = $('#groupsList');
   container.innerHTML = '<div class="empty-state">👥<br>加载中...</div>';
 
-  const { data: groups, error } = await supabase
-    .from('groups')
-    .select('*, group_members(count)')
-    .eq('book_id', book.id)
-    .order('created_at', { ascending: false });
+  try {
+    // 先加载小组列表（不带成员数，避免 RLS 拦截）
+    const { data: groups, error } = await supabase
+      .from('groups')
+      .select('*')
+      .eq('book_id', book.id)
+      .order('created_at', { ascending: false });
 
-  if (error) {
-    container.innerHTML = '<div class="empty-state">❌<br>加载失败</div>';
-    return;
-  }
+    if (error) {
+      console.error('loadBookDetail error:', error);
+      container.innerHTML = `<div class="empty-state">❌<br>加载失败：${escapeHtml(error.message)}<br><br><button class="btn btn-sm btn-outline" onclick="navigateTo('bookshelf');setTimeout(()=>navigateTo('book-detail',${JSON.stringify(book).replace(/"/g, '&quot;')}),100)">重试</button></div>`;
+      return;
+    }
 
-  if (!groups || groups.length === 0) {
-    container.innerHTML = '<div class="empty-state">👥<br>还没有读书小组，创建一个吧</div>';
-    return;
-  }
+    if (!groups || groups.length === 0) {
+      container.innerHTML = '<div class="empty-state">👥<br>还没有读书小组，创建一个吧</div>';
+      return;
+    }
 
-  container.innerHTML = groups.map(g => `
+    // 逐个查询每个小组的成员数
+    const groupsWithCounts = await Promise.all(groups.map(async (g) => {
+      const { count, error: countErr } = await supabase
+        .from('group_members')
+        .select('*', { count: 'exact', head: true })
+        .eq('group_id', g.id);
+      return { ...g, member_count: countErr ? '?' : (count || 0) };
+    }));
+
+    container.innerHTML = groupsWithCounts.map(g => `
     <div class="group-item" onclick="enterGroup('${g.id}')">
       <div class="group-item-left">
         <span class="group-item-name">${escapeHtml(g.name)}</span>
-        <span class="group-item-code">成员: ${g.group_members?.[0]?.count || 1}</span>
+        <span class="group-item-code">成员: ${g.member_count}</span>
       </div>
       <span class="group-item-invite-code" onclick="event.stopPropagation(); copyInviteCode('${g.invite_code}')" title="点击复制邀请码">${g.invite_code}</span>
     </div>
   `).join('');
+  } catch (err) {
+    console.error('loadBookDetail exception:', err);
+    container.innerHTML = `<div class="empty-state">❌<br>网络异常：${escapeHtml(err.message)}<br><br><button class="btn btn-sm btn-outline" onclick="navigateTo('book-detail',${JSON.stringify(book).replace(/"/g, '&quot;')})">重试</button></div>`;
+  }
 }
 
 async function createGroup(e) {
