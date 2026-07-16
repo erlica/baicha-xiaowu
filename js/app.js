@@ -12,7 +12,6 @@ const state = {
   // 阅读器状态
   bookContent: null,
   bookParagraphs: [],
-  chapters: [],       // {title, startOffset, paragraphIndex}
   highlights: [],
   annotations: [],
   // 实时订阅
@@ -705,80 +704,19 @@ async function enterGroup(groupId) {
 }
 
 // ========== 阅读器模块 ==========
-// 章节匹配：精准匹配第X回/第X章，且行不要太长（标题一般 < 40 字）
-const CHAPTER_RE = /^\s*第[一二三四五六七八九十百千零\d]+[回章节卷部篇集][\s\u3000]*(.*)/;
-
-function parseContentWithChapters(content) {
-  // 先把 content 按 \n 拆成行，保留原文行
-  const lines = content.split('\n');
-  const blocks = [];        // {type:'chapter'|'text', title?, text}
-  let currentText = '';
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    // 检测是否是章节标题
-    const match = line.trim().match(CHAPTER_RE);
-    // 章节标题条件：匹配成功 且 整行不能太长（排除误匹配正文中包含"第一回"的情况）
-    if (match && line.trim().length <= 45 && !/^第[一二三四五六七八九十百千零\d]+[回章节卷部篇集]$/.test(line.trim())) {
-      // 保存前面累积的正文
-      if (currentText.trim()) {
-        blocks.push({ type: 'text', text: currentText });
-        currentText = '';
-      }
-      // 章节标题作为一个 block
-      blocks.push({ type: 'chapter', title: line.trim() });
-    } else {
-      currentText += line + '\n';
-    }
-  }
-  // 最后一段正文
-  if (currentText.trim()) {
-    blocks.push({ type: 'text', text: currentText });
-  }
-
-  // 从 blocks 中提取章节信息和段落
-  const chapters = [];
-  const paragraphs = [];
-  let charOffset = 0;
-
-  for (let i = 0; i < blocks.length; i++) {
-    const block = blocks[i];
-    if (block.type === 'chapter') {
-      chapters.push({
-        title: block.title,
-        startOffset: charOffset,
-        paragraphIndex: paragraphs.length, // 这个标题后面第一段正文的索引
-      });
-    } else {
-      // 按空行拆正文为段落
-      const paras = block.text.split(/\n\n+/).filter(p => p.trim());
-      for (const p of paras) {
-        paragraphs.push(p.trim());
-        charOffset += p.trim().length + 2;
-      }
-    }
-  }
-
-  return { chapters, paragraphs, content };
-}
-
 async function loadReaderContent(group) {
   const book = group.books;
   const content = book.content || '';
 
-  // 解析：识别章节 + 拆分段落
-  const parsed = parseContentWithChapters(content);
-  state.chapters = parsed.chapters;
-  state.bookParagraphs = parsed.paragraphs;
+  // 按段落分割
+  state.bookParagraphs = content.split(/\n\n+/).filter(p => p.trim());
   state.bookContent = content;
 
   // 加载已有的划线和批注
   await loadHighlightsAndAnnotations(group);
 
-  // 渲染段落和目录
+  // 渲染段落
   renderParagraphs();
-  renderToc();
 
   // 建立实时订阅
   setupRealtimeSubscriptions(group);
@@ -792,76 +730,19 @@ async function loadReaderContent(group) {
   reportProgress(group);
 }
 
-function renderToc() {
-  const container = $('#tocList');
-  if (!container) return;
-
-  if (state.chapters.length === 0) {
-    container.innerHTML = '<p class="text-muted">未检测到章节标题</p>';
-    return;
-  }
-
-  container.innerHTML = state.chapters.map((ch, idx) => `
-    <div class="toc-item" onclick="jumpToChapter(${idx})">
-      <span class="toc-num">${idx + 1}</span>
-      <span class="toc-title">${escapeHtml(ch.title)}</span>
-    </div>
-  `).join('');
-}
-
-function jumpToChapter(index) {
-  const ch = state.chapters[index];
-  if (!ch || ch.paragraphIndex < 0) return;
-
-  const container = $('#readerContent');
-  if (!container) return;
-
-  // 找到对应段落的 DOM 元素（章节标题插入了 .chapter-heading）
-  const headings = container.querySelectorAll('.chapter-heading, p');
-  // ch.paragraphIndex 是章节标题后面第一段正文的段落索引
-  // 需要找到渲染后对应的 DOM（considering that chapter headings were inserted between paragraphs）
-  // 实际上在 renderParagraphs 中，章节标题会被插入到对应的段落前面
-  // 因此我们直接用 data-chapter-index 来定位
-
-  const target = container.querySelector(`.chapter-heading[data-chapter-index="${index}"]`);
-  if (target) {
-    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    target.style.background = 'rgba(212, 168, 83, 0.25)';
-    setTimeout(() => { target.style.background = ''; }, 2000);
-  } else if (ch.paragraphIndex < container.querySelectorAll('p').length) {
-    // fallback: 滚动到对应段落
-    const para = container.querySelectorAll('p')[ch.paragraphIndex];
-    para.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    para.style.background = 'rgba(212, 168, 83, 0.2)';
-    setTimeout(() => { para.style.background = ''; }, 2000);
-  }
-}
-
 function renderParagraphs() {
   const container = $('#readerContent');
   const paragraphs = state.bookParagraphs;
   const highlights = state.highlights;
-  const chapters = state.chapters;
 
-  // 建立章节到段落索引的映射：{ paragraphIndex -> chapter }
-  const chapterMap = {};
-  for (let i = 0; i < chapters.length; i++) {
-    chapterMap[chapters[i].paragraphIndex] = i;
-  }
-
-  let html = '';
-  let offset = 0;
-
-  for (let idx = 0; idx < paragraphs.length; idx++) {
-    const p = paragraphs[idx];
-
-    // 如果当前段落前有章节标题，插入章节标题 DOM
-    if (chapterMap[idx] !== undefined) {
-      const ch = chapters[chapterMap[idx]];
-      html += `<div class="chapter-heading" data-chapter-index="${chapterMap[idx]}">${escapeHtml(ch.title)}</div>`;
+  container.innerHTML = paragraphs.map((p, idx) => {
+    // 计算该段落在全文中的偏移
+    let offset = 0;
+    for (let i = 0; i < idx; i++) {
+      offset += paragraphs[i].length + 2; // +2 for \n\n
     }
 
-    // 计算该段落在全文中的偏移
+    // 检查是否有划线覆盖此段落
     const paraEnd = offset + p.length;
     const paraHighlights = highlights.filter(h =>
       (h.start_offset >= offset && h.start_offset < paraEnd) ||
@@ -870,35 +751,41 @@ function renderParagraphs() {
     );
 
     if (paraHighlights.length === 0) {
-      html += `<p data-offset="${offset}">${escapeHtml(p)}</p>`;
-    } else {
-      // 有划线的段落，需要分段渲染
-      let partHtml = '';
-      let cursor = offset;
-      const sorted = paraHighlights.sort((a, b) => a.start_offset - b.start_offset);
-
-      for (const hl of sorted) {
-        if (hl.start_offset > cursor) {
-          partHtml += escapeHtml(contentSlice(cursor, hl.start_offset));
-        }
-        const isMine = hl.user_id === state.user.id;
-        const hasAnnotation = state.annotations.some(a => a.highlight_id === hl.id);
-        const cls = `highlight-span${isMine ? '' : ' other-user'}${hasAnnotation ? ' has-annotation' : ''}`;
-        partHtml += `<span class="${cls}" data-hl-id="${hl.id}" data-offset="${hl.start_offset}" data-end="${hl.end_offset}" data-user="${hl.user_id}" title="${isMine ? '我的划线' : '朋友的划线'}${hasAnnotation ? ' (有批注)' : ''}">${escapeHtml(hl.selected_text)}</span>`;
-        cursor = hl.end_offset;
-      }
-      if (cursor < paraEnd) {
-        partHtml += escapeHtml(contentSlice(cursor, paraEnd));
-      }
-      html += `<p data-offset="${offset}">${partHtml}</p>`;
+      return `<p data-offset="${offset}">${escapeHtml(p)}</p>`;
     }
 
-    offset += p.length + 2; // +2 for separator
-  }
+    // 有划线的段落，需要分段渲染
+    let html = '';
+    let cursor = offset;
+    const sorted = paraHighlights.sort((a, b) => a.start_offset - b.start_offset);
 
-  container.innerHTML = html;
+    for (const hl of sorted) {
+      const relStart = hl.start_offset - offset;
+      const relEnd = hl.end_offset - offset;
 
-  // 绑定划线点击事件
+      // 划线前的文本
+      if (hl.start_offset > cursor) {
+        html += escapeHtml(contentSlice(cursor, hl.start_offset));
+      }
+
+      // 划线文本
+      const isMine = hl.user_id === state.user.id;
+      const hasAnnotation = state.annotations.some(a => a.highlight_id === hl.id);
+      const cls = `highlight-span${isMine ? '' : ' other-user'}${hasAnnotation ? ' has-annotation' : ''}`;
+      html += `<span class="${cls}" data-hl-id="${hl.id}" data-offset="${hl.start_offset}" data-end="${hl.end_offset}" data-user="${hl.user_id}" title="${isMine ? '我的划线' : '朋友的划线'}${hasAnnotation ? ' (有批注)' : ''}">${escapeHtml(hl.selected_text)}</span>`;
+
+      cursor = hl.end_offset;
+    }
+
+    // 最后一段划线后的文本
+    if (cursor < paraEnd) {
+      html += escapeHtml(contentSlice(cursor, paraEnd));
+    }
+
+    return `<p data-offset="${offset}">${html}</p>`;
+  }).join('');
+
+  // 绑定点击事件
   container.querySelectorAll('.highlight-span').forEach(span => {
     span.addEventListener('click', (e) => {
       e.stopPropagation();
