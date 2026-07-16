@@ -170,13 +170,50 @@ async function loadBooks() {
     return;
   }
 
-  container.innerHTML = data.map(book => `
-    <div class="book-card" onclick="navigateTo('book-detail', ${JSON.stringify(book).replace(/"/g, '&quot;')})">
-      <div class="book-card-title">${escapeHtml(book.title)}</div>
-      <div class="book-card-author">${escapeHtml(book.author || '未知作者')}</div>
-      <div class="book-card-meta">${formatDate(book.created_at)} 上传</div>
+  container.innerHTML = data.map(book => {
+    const isOwner = book.created_by === state.user?.id;
+    return `
+    <div class="book-card">
+      <div class="book-card-inner" onclick="navigateTo('book-detail', ${JSON.stringify(book).replace(/"/g, '&quot;')})">
+        ${book.cover_url ? `<img class="book-card-cover" src="${escapeHtml(book.cover_url)}" alt="">` : ''}
+        <div class="book-card-title">${escapeHtml(book.title)}</div>
+        <div class="book-card-author">${escapeHtml(book.author || '未知作者')}</div>
+        <div class="book-card-meta">${formatDate(book.created_at)} 上传</div>
+      </div>
+      ${isOwner ? `<button class="book-card-delete" onclick="event.stopPropagation();deleteBook('${book.id}','${escapeHtml(book.title)}')" title="删除这本书">🗑️</button>` : ''}
     </div>
-  `).join('');
+  `; }).join('');
+}
+
+// ========== 删除书籍 ==========
+async function deleteBook(bookId, bookTitle) {
+  if (!confirm(`确定要删除《${bookTitle}》吗？\n\n删除后，该书的所有小组、划线、批注都会被清除，且无法恢复。`)) {
+    return;
+  }
+
+  showLoading();
+  try {
+    // 1. 先删除关联的小组成员
+    const { data: groups } = await supabase.from('groups').select('id').eq('book_id', bookId);
+    if (groups && groups.length > 0) {
+      const groupIds = groups.map(g => g.id);
+      await supabase.from('group_members').delete().in('group_id', groupIds);
+      await supabase.from('comments').delete().in('group_id', groupIds);
+      await supabase.from('highlights').delete().eq('book_id', bookId);
+      await supabase.from('annotations').delete().eq('book_id', bookId);
+      await supabase.from('reading_progress').delete().eq('book_id', bookId);
+      await supabase.from('groups').delete().eq('book_id', bookId);
+    }
+    // 2. 最后删除书籍
+    await supabase.from('books').delete().eq('id', bookId);
+
+    toast('《' + bookTitle + '》已删除', 'success');
+    loadBooks();
+  } catch (err) {
+    toast('删除失败: ' + (err.message || '未知错误'), 'error');
+  } finally {
+    hideLoading();
+  }
 }
 
 // ========== 上传书籍模块 ==========

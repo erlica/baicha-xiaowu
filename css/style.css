@@ -324,19 +324,29 @@ body {
 .book-card {
   background: var(--bg-card);
   border-radius: var(--radius);
-  padding: 24px;
   box-shadow: var(--shadow);
-  cursor: pointer;
   transition: var(--transition);
   border: 1px solid var(--border);
   position: relative;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.book-card-inner {
+  padding: 24px;
+  cursor: pointer;
+  flex: 1;
 }
 
 .book-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-lg);
   border-color: var(--primary-light);
+}
+
+.book-card:hover .book-card-inner {
+  /* keep hover effect on card */
 }
 
 .book-card::before {
@@ -348,6 +358,42 @@ body {
   width: 4px;
   background: var(--gold);
   border-radius: 4px 0 0 4px;
+}
+
+.book-card-cover {
+  width: 100%;
+  height: 140px;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  margin-bottom: 12px;
+}
+
+.book-card-delete {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  font-size: 14px;
+  cursor: pointer;
+  opacity: 0;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.book-card:hover .book-card-delete {
+  opacity: 1;
+}
+
+.book-card-delete:hover {
+  background: var(--danger);
+  transform: scale(1.1);
 }
 
 .book-card-title {
