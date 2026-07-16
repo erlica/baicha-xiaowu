@@ -804,8 +804,13 @@ function renderParagraphs() {
     });
   });
 
-  // 绑定文本选择事件
+  // 绑定文本选择事件（桌面端 + 移动端）
   container.addEventListener('mouseup', handleTextSelection);
+  container.addEventListener('touchend', handleTouchSelection);
+
+  // 移动端：长按后出菜单
+  container.addEventListener('touchstart', handleTouchStart, { passive: false });
+  container.addEventListener('touchmove', handleTouchMove, { passive: false });
 }
 
 function contentSlice(start, end) {
@@ -832,6 +837,47 @@ async function handleTextSelection(e) {
   // 保存划线
   await saveHighlight(selectedText, startOffset, endOffset);
   selection.removeAllRanges();
+}
+
+// 移动端触摸选区 - 延迟处理避免和点击冲突
+let touchSelectionTimer = null;
+function handleTouchSelection(e) {
+  // 移动端 touchend 稍微延迟，让系统选择完成
+  if (touchSelectionTimer) clearTimeout(touchSelectionTimer);
+  touchSelectionTimer = setTimeout(() => {
+    handleTextSelection(e);
+  }, 200);
+}
+
+// 移动端长按划线弹出菜单
+let longPressTimer = null;
+let longPressTarget = null;
+
+function handleTouchStart(e) {
+  // 找被 touch 的划线元素
+  const span = e.target.closest('.highlight-span');
+  if (!span || span.dataset.user !== state.user.id) return;
+
+  longPressTarget = span;
+
+  longPressTimer = setTimeout(() => {
+    // 阻止文本选择行为
+    e.preventDefault();
+    const hlId = longPressTarget.dataset.hlId;
+    const highlight = state.highlights.find(h => h.id === hlId);
+    if (highlight) {
+      showHighlightMenu(highlight, longPressTarget);
+    }
+  }, 500);
+}
+
+function handleTouchMove(e) {
+  // 手指移动了，取消长按
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+    longPressTarget = null;
+  }
 }
 
 function getTextOffset(container, range) {
@@ -970,8 +1016,19 @@ function showHighlightMenu(highlight, spanEl) {
   // 定位在划线元素附近
   const rect = spanEl.getBoundingClientRect();
   menu.style.position = 'fixed';
-  menu.style.left = rect.left + 'px';
-  menu.style.top = (rect.bottom + 4) + 'px';
+  // 如果下方空间不够，显示在上方
+  const menuHeight = 90; // 预估两个按钮高度
+  if (rect.bottom + menuHeight > window.innerHeight) {
+    menu.style.top = (rect.top - menuHeight - 4) + 'px';
+  } else {
+    menu.style.top = (rect.bottom + 4) + 'px';
+  }
+  // 水平居中于划线元素
+  const menuWidth = 160;
+  let left = rect.left + rect.width / 2 - menuWidth / 2;
+  if (left < 8) left = 8;
+  if (left + menuWidth > window.innerWidth - 8) left = window.innerWidth - menuWidth - 8;
+  menu.style.left = left + 'px';
   menu.style.zIndex = '9999';
   document.body.appendChild(menu);
 

@@ -768,6 +768,20 @@ body {
   color: var(--danger);
 }
 
+/* 移动端菜单适配 */
+@media (max-width: 768px) {
+  .hl-popup-menu {
+    min-width: 160px;
+    border-radius: var(--radius);
+    box-shadow: 0 -2px 16px rgba(0,0,0,0.15);
+  }
+
+  .hl-menu-btn {
+    padding: 14px 20px;
+    font-size: 16px;
+  }
+}
+
 /* 批注提示图标 */
 .annotation-indicator {
   display: inline-block;
