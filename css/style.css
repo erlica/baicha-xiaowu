@@ -705,6 +705,25 @@ body {
   text-indent: 2em;
 }
 
+/* 章节标题锚点 */
+.chapter-heading {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  text-align: center;
+  padding: 28px 0 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+  user-select: none;
+  scroll-margin-top: 20px;
+}
+
+.chapter-heading:first-child {
+  padding-top: 0;
+}
+
 .reader-content .paragraph-wrapper {
   position: relative;
 }
