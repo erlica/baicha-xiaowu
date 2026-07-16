@@ -12,6 +12,7 @@ const state = {
   // 阅读器状态
   bookContent: null,
   bookParagraphs: [],
+  chapters: [],       // {title, startOffset, paragraphIndex}
   highlights: [],
   annotations: [],
   // 实时订阅
@@ -704,6 +705,47 @@ async function enterGroup(groupId) {
 }
 
 // ========== 阅读器模块 ==========
+// 章节识别正则（支持各种模式：第X回、第X章、第X节、Chapter X、一、二...）
+const CHAPTER_PATTERNS = [
+  /^第[一二三四五六七八九十百千零\d]+[回章节卷部篇集]/,
+  /^[（(][一二三四五六七八九十百千零\d]+[)）]/,
+  /^Chapter\s+\d+/i,
+  /^[一二三四五六七八九十百千零]+[、，,\s]/,
+];
+
+function detectChapters(content) {
+  const lines = content.split('\n');
+  const chapters = [];
+  let charOffset = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line || line.length > 60) {
+      charOffset += lines[i].length + 1; // +1 for \n
+      continue;
+    }
+
+    let isChapter = false;
+    for (const pattern of CHAPTER_PATTERNS) {
+      if (pattern.test(line)) {
+        isChapter = true;
+        break;
+      }
+    }
+
+    if (isChapter) {
+      chapters.push({
+        title: line,
+        startOffset: charOffset,
+        paragraphIndex: chapters.length, // 简化：用索引对应
+      });
+    }
+    charOffset += lines[i].length + 1;
+  }
+
+  return chapters;
+}
+
 async function loadReaderContent(group) {
   const book = group.books;
   const content = book.content || '';
@@ -712,11 +754,18 @@ async function loadReaderContent(group) {
   state.bookParagraphs = content.split(/\n\n+/).filter(p => p.trim());
   state.bookContent = content;
 
+  // 检测章节
+  state.chapters = detectChapters(content);
+
+  // 将章节映射到段落索引（找到每个章节对应的段落）
+  mapChaptersToParagraphs();
+
   // 加载已有的划线和批注
   await loadHighlightsAndAnnotations(group);
 
-  // 渲染段落
+  // 渲染段落和目录
   renderParagraphs();
+  renderToc();
 
   // 建立实时订阅
   setupRealtimeSubscriptions(group);
@@ -728,6 +777,62 @@ async function loadReaderContent(group) {
 
   // 上报当前进度
   reportProgress(group);
+}
+
+function mapChaptersToParagraphs() {
+  // 找到每个章节起始位置对应的段落索引
+  for (const ch of state.chapters) {
+    ch.paragraphIndex = findParagraphAtOffset(ch.startOffset);
+  }
+}
+
+function findParagraphAtOffset(offset) {
+  let currentOffset = 0;
+  for (let i = 0; i < state.bookParagraphs.length; i++) {
+    const len = state.bookParagraphs[i].length + 2; // +2 for \n\n separator
+    if (currentOffset + len > offset) {
+      // offset falls inside this paragraph
+      return i;
+    }
+    currentOffset += len;
+  }
+  return -1;
+}
+
+function renderToc() {
+  const container = $('#tocList');
+  if (!container) return;
+
+  if (state.chapters.length === 0) {
+    container.innerHTML = '<p class="text-muted">未检测到章节标题</p>';
+    return;
+  }
+
+  container.innerHTML = state.chapters.map((ch, idx) => `
+    <div class="toc-item" onclick="jumpToChapter(${idx})">
+      <span class="toc-num">${idx + 1}</span>
+      <span class="toc-title">${escapeHtml(ch.title)}</span>
+    </div>
+  `).join('');
+}
+
+function jumpToChapter(index) {
+  const ch = state.chapters[index];
+  if (!ch || ch.paragraphIndex < 0) return;
+
+  const container = $('#readerContent');
+  if (!container) return;
+
+  // 找到对应段落的 DOM 元素
+  const paragraphs = container.querySelectorAll('p');
+  if (ch.paragraphIndex < paragraphs.length) {
+    paragraphs[ch.paragraphIndex].scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // 高亮效果
+    paragraphs[ch.paragraphIndex].style.background = 'rgba(212, 168, 83, 0.2)';
+    setTimeout(() => {
+      paragraphs[ch.paragraphIndex].style.background = '';
+    }, 2000);
+  }
 }
 
 function renderParagraphs() {

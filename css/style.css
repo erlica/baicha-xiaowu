@@ -862,10 +862,54 @@ body {
 
 /* 批注列表 */
 .annotations-list,
-.comments-list {
+.comments-list,
+.toc-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+/* 目录列表 */
+.toc-list {
+  gap: 2px;
+}
+
+.toc-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition);
+  font-size: 14px;
+}
+
+.toc-item:hover {
+  background: var(--gold-light);
+}
+
+.toc-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.toc-title {
+  color: var(--text);
+  font-family: var(--font-serif);
+  line-height: 1.5;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .annotation-item,
