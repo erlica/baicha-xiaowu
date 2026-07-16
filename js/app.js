@@ -179,32 +179,298 @@ async function loadBooks() {
   `).join('');
 }
 
-async function uploadBook(e) {
+// ========== 上传书籍模块 ==========
+let selectedFile = null;
+let currentUploadMethod = 'file';
+
+// 上传方式切换
+$$('.upload-method-tab')?.forEach(tab => {
+  tab.addEventListener('click', () => {
+    currentUploadMethod = tab.dataset.method;
+    $$('.upload-method-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    $$('.upload-method-panel').forEach(p => p.classList.remove('active'));
+    if (currentUploadMethod === 'file') {
+      $('#uploadMethodFile').classList.add('active');
+    } else {
+      $('#uploadMethodPaste').classList.add('active');
+    }
+  });
+});
+
+// 拖拽上传
+const dropzone = $('#uploadDropzone');
+const fileInput = $('#bookFileInput');
+
+if (dropzone) {
+  dropzone.addEventListener('click', () => fileInput.click());
+
+  dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('dragover');
+  });
+
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('dragover');
+  });
+
+  dropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('dragover');
+    const files = e.dataTransfer.files;
+    if (files.length > 0) handleFileSelect(files[0]);
+  });
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) handleFileSelect(e.target.files[0]);
+  });
+}
+
+function handleFileSelect(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  const supported = ['epub', 'txt', 'md', 'markdown', 'pdf'];
+  if (!supported.includes(ext)) {
+    toast('不支持的文件格式，请上传 EPUB、Markdown、TXT 或 PDF 文件', 'error');
+    return;
+  }
+  selectedFile = file;
+  $('#fileName').textContent = `${file.name} (${formatFileSize(file.size)})`;
+  $('#fileInfo').classList.remove('hidden');
+  $('#uploadDropzone').style.display = 'none';
+
+  // 自动从文件名提取书名
+  const name = file.name.replace(/\.[^.]+$/, '').replace(/[_-]/g, ' ').trim();
+  if (!$('#bookTitle').value) {
+    $('#bookTitle').value = name;
+  }
+}
+
+$('#btnRemoveFile')?.addEventListener('click', () => {
+  selectedFile = null;
+  fileInput.value = '';
+  $('#fileInfo').classList.add('hidden');
+  $('#uploadDropzone').style.display = '';
+});
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+// 文件上传
+$('#btnUploadFile')?.addEventListener('click', async (e) => {
   e.preventDefault();
   const title = $('#bookTitle').value.trim();
   const author = $('#bookAuthor').value.trim();
-  const content = $('#bookContent').value.trim();
 
-  if (!title || !content) return toast('请填写书名和内容', 'error');
+  if (!title) return toast('请填写书名', 'error');
+  if (!selectedFile) return toast('请选择文件', 'error');
 
   showLoading();
   try {
-    const { error } = await supabase.from('books').insert({
-      title,
-      author: author || '未知',
-      content,
-      created_by: state.user.id,
-    });
-    if (error) throw error;
-    toast('上传成功！', 'success');
-    closeModal('uploadModal');
-    $('#uploadForm').reset();
-    loadBooks();
+    const ext = selectedFile.name.split('.').pop().toLowerCase();
+    let content = '';
+
+    if (ext === 'txt') {
+      content = await readFileAsText(selectedFile);
+    } else if (ext === 'epub') {
+      content = await parseEpub(selectedFile);
+    } else if (ext === 'md' || ext === 'markdown') {
+      content = await readFileAsText(selectedFile);
+      // Markdown 保留原样，阅读器可直接显示
+    } else if (ext === 'pdf') {
+      content = await parsePdf(selectedFile);
+    }
+
+    if (!content || content.trim().length < 10) {
+      toast('无法提取文件内容，文件可能为空或格式不支持', 'error');
+      hideLoading();
+      return;
+    }
+
+    await saveBookToDb(title, author, content);
   } catch (err) {
-    toast(err.message || '上传失败', 'error');
+    console.error('上传错误:', err);
+    toast('上传失败: ' + (err.message || '未知错误'), 'error');
   } finally {
     hideLoading();
   }
+});
+
+// 粘贴文本上传
+$('#btnUploadPaste')?.addEventListener('click', async (e) => {
+  e.preventDefault();
+  const title = $('#bookTitle2').value.trim();
+  const author = $('#bookAuthor2').value.trim();
+  const content = $('#bookContent').value.trim();
+
+  if (!title) return toast('请填写书名', 'error');
+  if (!content || content.length < 10) return toast('请粘贴书籍内容', 'error');
+
+  showLoading();
+  try {
+    await saveBookToDb(title, author, content);
+  } catch (err) {
+    toast('上传失败: ' + err.message, 'error');
+  } finally {
+    hideLoading();
+  }
+});
+
+async function saveBookToDb(title, author, content) {
+  const cover = $('#bookCover')?.value?.trim() || '';
+  const { data, error } = await supabase.from('books').insert({
+    title,
+    author: author || '未知',
+    content,
+    cover_url: cover,
+    created_by: state.user.id,
+  }).select().single();
+
+  if (error) throw error;
+
+  toast('上传成功！', 'success');
+  resetUploadForm();
+  closeModal('uploadModal');
+
+  // 刷新并跳转到新书
+  await loadBooks();
+  if (data) navigateTo('book-detail', data);
+}
+
+function resetUploadForm() {
+  selectedFile = null;
+  if (fileInput) fileInput.value = '';
+  $('#fileInfo')?.classList.add('hidden');
+  if ($('#uploadDropzone')) $('#uploadDropzone').style.display = '';
+  $('#bookTitle').value = '';
+  $('#bookAuthor').value = '';
+  $('#bookCover').value = '';
+  $('#bookTitle2').value = '';
+  $('#bookAuthor2').value = '';
+  $('#bookContent').value = '';
+}
+
+function readFileAsText(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsText(file, 'UTF-8');
+  });
+}
+
+function readFileAsArrayBuffer(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsArrayBuffer(file);
+  });
+}
+
+// ========== EPUB 解析 ==========
+async function parseEpub(file) {
+  const arrayBuffer = await readFileAsArrayBuffer(file);
+  const zip = await JSZip.loadAsync(arrayBuffer);
+
+  // 1. 找到 container.xml 获取 OPF 路径
+  const containerXml = await zip.file('META-INF/container.xml')?.async('text');
+  if (!containerXml) throw new Error('无效的 EPUB 文件');
+
+  const opfMatch = containerXml.match(/full-path="([^"]+)"/);
+  if (!opfMatch) throw new Error('无法找到 EPUB 内容索引');
+
+  const opfPath = opfMatch[1];
+  const opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : '';
+
+  // 2. 解析 OPF 文件获取章节列表
+  const opfXml = await zip.file(opfPath)?.async('text');
+  if (!opfXml) throw new Error('无法读取 OPF 文件');
+
+  const parser = new DOMParser();
+  const opfDoc = parser.parseFromString(opfXml, 'text/xml');
+
+  // 获取所有 spine 条目
+  const spineItems = [];
+  const items = {};
+  opfDoc.querySelectorAll('manifest > item').forEach(item => {
+    items[item.getAttribute('id')] = item.getAttribute('href');
+  });
+
+  const spine = opfDoc.querySelectorAll('spine > itemref');
+  spine.forEach(ref => {
+    const id = ref.getAttribute('idref');
+    if (items[id]) {
+      spineItems.push(opfDir + items[id]);
+    }
+  });
+
+  // 如果 spine 为空，尝试所有 HTML/XHTML 文件
+  if (spineItems.length === 0) {
+    const allFiles = Object.keys(zip.files);
+    for (const name of allFiles) {
+      const ext = name.split('.').pop()?.toLowerCase();
+      if (ext === 'html' || ext === 'htm' || ext === 'xhtml') {
+        spineItems.push(name);
+      }
+    }
+  }
+
+  // 3. 逐个读取章节内容
+  let fullText = '';
+  for (const path of spineItems) {
+    try {
+      let html = await zip.file(path)?.async('text');
+      if (!html) continue;
+
+      // 处理可能的路径问题
+      if (!html && zip.file(path.replace(/^\//, ''))) {
+        html = await zip.file(path.replace(/^\//, '')).async('text');
+      }
+
+      if (html) {
+        // 提取纯文本
+        const doc = parser.parseFromString(html, 'text/html');
+        const body = doc.querySelector('body');
+        if (body) {
+          let text = body.textContent || '';
+          // 清理多余空白
+          text = text.replace(/\n{3,}/g, '\n\n').replace(/[ \t]{2,}/g, ' ').trim();
+          if (text) fullText += text + '\n\n';
+        }
+      }
+    } catch (e) {
+      console.warn('跳过章节:', path, e);
+    }
+  }
+
+  if (!fullText.trim()) throw new Error('未能从 EPUB 中提取到文字内容');
+  return fullText.trim();
+}
+
+// ========== PDF 解析 ==========
+async function parsePdf(file) {
+  const arrayBuffer = await readFileAsArrayBuffer(file);
+
+  // 设置 pdf.js worker
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const textContent = await page.getTextContent();
+    const pageText = textContent.items.map(item => item.str).join(' ');
+    if (pageText.trim()) {
+      fullText += pageText + '\n\n';
+    }
+  }
+
+  if (!fullText.trim()) throw new Error('未能从 PDF 中提取到文字内容（可能是扫描版 PDF，不含文字层）');
+  return fullText.trim();
 }
 
 // ========== 书籍详情 / 小组模块 ==========
@@ -945,9 +1211,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 上传书籍
-  $('#btnUploadBook').addEventListener('click', () => openModal('uploadModal'));
+  $('#btnUploadBook').addEventListener('click', () => { resetUploadForm(); openModal('uploadModal'); });
   $('#closeUploadModal').addEventListener('click', () => closeModal('uploadModal'));
-  $('#uploadForm').addEventListener('submit', uploadBook);
 
   // 创建小组
   $('#btnCreateGroup').addEventListener('click', () => openModal('createGroupModal'));

@@ -8,6 +8,10 @@
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- EPUB 解析 -->
+  <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+  <!-- PDF 解析 -->
+  <script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 </head>
 <body>
 
@@ -73,7 +77,23 @@
           <h3>上传新书</h3>
           <button class="modal-close" id="closeUploadModal">✕</button>
         </div>
-        <form id="uploadForm">
+        <div class="upload-method-tabs">
+          <button class="upload-method-tab active" data-method="file">📁 上传文件</button>
+          <button class="upload-method-tab" data-method="paste">📋 粘贴文本</button>
+        </div>
+
+        <!-- 文件上传方式 -->
+        <div id="uploadMethodFile" class="upload-method-panel active">
+          <div class="upload-dropzone" id="uploadDropzone">
+            <span class="dropzone-icon">📂</span>
+            <p>拖拽文件到此处，或点击选择</p>
+            <p class="dropzone-hint">支持 EPUB、Markdown、TXT 格式</p>
+            <input type="file" id="bookFileInput" accept=".epub,.md,.txt,.markdown" hidden>
+          </div>
+          <div id="fileInfo" class="file-info hidden">
+            <span id="fileName"></span>
+            <button class="btn btn-sm" id="btnRemoveFile">移除</button>
+          </div>
           <div class="form-group">
             <label for="bookTitle">书名</label>
             <input type="text" id="bookTitle" placeholder="例如：红楼梦" required>
@@ -83,11 +103,28 @@
             <input type="text" id="bookAuthor" placeholder="例如：曹雪芹">
           </div>
           <div class="form-group">
-            <label for="bookContent">书籍内容</label>
-            <textarea id="bookContent" rows="12" placeholder="请粘贴书籍文本内容（支持 txt 格式）&#10;&#10;提示：可以从网上下载 txt 版本的红楼梦，复制全部文本粘贴到这里" required></textarea>
+            <label for="bookCover">封面（可选）</label>
+            <input type="text" id="bookCover" placeholder="输入图片链接，或留空">
           </div>
-          <button type="submit" class="btn btn-primary btn-block">上传</button>
-        </form>
+          <button type="submit" class="btn btn-primary btn-block" id="btnUploadFile">上传</button>
+        </div>
+
+        <!-- 粘贴文本方式 -->
+        <div id="uploadMethodPaste" class="upload-method-panel">
+          <div class="form-group">
+            <label for="bookTitle2">书名</label>
+            <input type="text" id="bookTitle2" placeholder="例如：红楼梦">
+          </div>
+          <div class="form-group">
+            <label for="bookAuthor2">作者</label>
+            <input type="text" id="bookAuthor2" placeholder="例如：曹雪芹">
+          </div>
+          <div class="form-group">
+            <label for="bookContent">书籍内容</label>
+            <textarea id="bookContent" rows="10" placeholder="请粘贴书籍文本内容&#10;&#10;提示：可以从网上下载 txt 版本的红楼梦，复制全部文本粘贴到这里"></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" id="btnUploadPaste">上传</button>
+        </div>
       </div>
     </div>
 
