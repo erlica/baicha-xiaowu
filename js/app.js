@@ -790,8 +790,15 @@ function renderParagraphs() {
     span.addEventListener('click', (e) => {
       e.stopPropagation();
       const hlId = span.dataset.hlId;
+      const userId = span.dataset.user;
       const annotation = state.annotations.find(a => a.highlight_id === hlId);
-      if (annotation) {
+      const highlight = state.highlights.find(h => h.id === hlId);
+
+      if (userId === state.user.id) {
+        // 自己的划线：弹菜单
+        showHighlightMenu(highlight, span);
+      } else if (annotation) {
+        // 别人的划线上有批注：显示批注
         showAnnotationPopup(annotation, span);
       }
     });
@@ -944,6 +951,69 @@ function showAnnotationPopup(annotation, spanEl) {
       }
     });
   }, 100);
+}
+
+// 划线操作菜单
+function showHighlightMenu(highlight, spanEl) {
+  const menuId = 'hl-menu-' + highlight.id;
+  // 移除已有菜单
+  document.querySelectorAll('.hl-popup-menu').forEach(m => m.remove());
+
+  const menu = document.createElement('div');
+  menu.className = 'hl-popup-menu';
+  menu.id = menuId;
+  menu.innerHTML = `
+    <button class="hl-menu-btn" data-action="annotate">✏️ 写批注</button>
+    <button class="hl-menu-btn hl-menu-delete" data-action="delete">🗑️ 删除划线</button>
+  `;
+
+  // 定位在划线元素附近
+  const rect = spanEl.getBoundingClientRect();
+  menu.style.position = 'fixed';
+  menu.style.left = rect.left + 'px';
+  menu.style.top = (rect.bottom + 4) + 'px';
+  menu.style.zIndex = '9999';
+  document.body.appendChild(menu);
+
+  menu.querySelector('[data-action="annotate"]').onclick = (e) => {
+    e.stopPropagation();
+    menu.remove();
+    openAnnotationModal(highlight);
+  };
+
+  menu.querySelector('[data-action="delete"]').onclick = async (e) => {
+    e.stopPropagation();
+    menu.remove();
+    await deleteHighlight(highlight);
+  };
+
+  // 点击其他地方关闭
+  setTimeout(() => {
+    document.addEventListener('click', function closeMenu(e) {
+      if (!menu.contains(e.target)) {
+        menu.remove();
+        document.removeEventListener('click', closeMenu);
+      }
+    }, { once: true });
+  }, 0);
+}
+
+async function deleteHighlight(highlight) {
+  if (!confirm(`确定要删除这条划线吗？\n\n划线内容：「${highlight.selected_text}」`)) return;
+  try {
+    // 同时删除关联的批注
+    await supabase.from('annotations').delete().eq('highlight_id', highlight.id);
+    await supabase.from('highlights').delete().eq('id', highlight.id);
+
+    state.highlights = state.highlights.filter(h => h.id !== highlight.id);
+    state.annotations = state.annotations.filter(a => a.highlight_id !== highlight.id);
+
+    toast('划线已删除', 'success');
+    renderParagraphs();
+    loadAnnotations(state.currentGroup);
+  } catch (err) {
+    toast('删除失败', 'error');
+  }
 }
 
 // ========== 实时同步 ==========

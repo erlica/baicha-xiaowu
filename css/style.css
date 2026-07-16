@@ -736,6 +736,38 @@ body {
   background: rgba(142, 68, 173, 0.3);
 }
 
+/* 划线弹出菜单 */
+.hl-popup-menu {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.12);
+  overflow: hidden;
+  min-width: 130px;
+}
+
+.hl-menu-btn {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  font-size: 14px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  text-align: left;
+  transition: var(--transition);
+}
+
+.hl-menu-btn:hover {
+  background: var(--gold-light);
+}
+
+.hl-menu-delete:hover {
+  background: rgba(192, 57, 43, 0.1);
+  color: var(--danger);
+}
+
 /* 批注提示图标 */
 .annotation-indicator {
   display: inline-block;
